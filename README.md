@@ -1,5 +1,5 @@
 #  Image-guided topic modeling for interpretable privacy classification
-This repository contains the code for the paper _Image-guided topic modeling for interpretable privacy classification_  accepted at [eXCV workshop](https://excv-workshop.github.io/) at ECCV 2024 (pdf version available [here](https://publidiap.idiap.ch/attachments/papers/2024/Baia_ECCVW_2024.pdf)).
+This repository contains the code for the paper _Image-guided topic modeling for interpretable privacy classification_  presented at the [eXCV workshop](https://excv-workshop.github.io/) at ECCV 2024 (pdf version available [here](https://publidiap.idiap.ch/attachments/papers/2024/Baia_ECCVW_2024.pdf)).
 
 
 ## Installation
