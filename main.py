@@ -31,7 +31,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from utils import classification_metrics
-
+import copy
 
 
 def cluster_images(image_embs, reducer, clusterer, cluster_size, save_dir, file_cluster_name = "clusterer_model.pkl"):
@@ -135,7 +135,7 @@ def get_candidates(dataset_df, tags_reprs_embeddings, model_bertopic):
 
   return clusters_candidates
 
-def get_clusters_descriptors(dataset_df, candidates, cluster_embeddings, encoder_model):
+def get_clusters_descriptors(dataset_df, candidates, cluster_embeddings, encoder_model, device):
   clusters_descriptors = {}
 
   all_clusters = set(dataset_df["clusters"].tolist())
@@ -178,7 +178,7 @@ def get_clusters_descriptors(dataset_df, candidates, cluster_embeddings, encoder
   return clusters_descriptors
 
 
-def get_clusters_descriptors_embeds(encoder_model, clusters_descriptors, batch_size = 20):
+def get_clusters_descriptors_embeds(encoder_model, clusters_descriptors, device, batch_size = 20):
 
   descriptors = []
   for key, value in clusters_descriptors.items():
@@ -211,14 +211,15 @@ class Model(nn.Module):
     def forward(self, x):
         return self.layer(x)
 
-def evaluate(model, input_features, gt_labels):
-    model.eval()
-
+def evaluate(model, input_features, gt_labels, device):
+    model.to(device)
+    model.eval()    
+    
     with torch.no_grad():
-          outputs = model(input_features)
+          outputs = model(input_features.to(device))
           predicted_classes = torch.argmax(outputs, dim=1)
 
-    metrics = classification_metrics(gt_labels, predicted_classes.detach().numpy() )
+    metrics = classification_metrics(gt_labels, predicted_classes.detach().cpu().numpy() )
 
     return metrics
 
@@ -227,16 +228,19 @@ def train(model, input_features, gt_labels, eval_features, eval_labels, optimize
     best_model_state_dict= None
     best_f1_score = 0
 
+    model.to(device)
+
     for epoch in tqdm(range(n_epochs)):
+      model.train()
 
       indices = torch.randperm(input_features.size()[0])
       input_features=input_features[indices]
       gt_labels=gt_labels[indices]
 
       for i in range(0, len(input_features), batch_size):
-        Xbatch = input_features[i:i+batch_size]
+        Xbatch = input_features[i:i+batch_size].to(device)
         y_pred = model(Xbatch)
-        ybatch = gt_labels.long()[i:i+batch_size]
+        ybatch = gt_labels.long()[i:i+batch_size].to(device)
 
         loss = criterion(y_pred, ybatch)
 
@@ -245,13 +249,13 @@ def train(model, input_features, gt_labels, eval_features, eval_labels, optimize
         optimizer.step()
       
       if use_eval:
-        metrics = evaluate(model, eval_features, eval_labels)
+        metrics = evaluate(model, eval_features, eval_labels, device)
         eval_f1_score = metrics["Overview"]["F1 Score"]
         #print("epoch: ", epoch, eval_f1_score)
 
         if eval_f1_score > best_f1_score:
             best_f1_score = eval_f1_score
-            best_model_state_dict = model.state_dict()
+            best_model_state_dict = copy.deepcopy(model.state_dict())
 
     return model, best_model_state_dict
 
@@ -384,7 +388,7 @@ if __name__ == '__main__':
 
     print("getting descriptors...")
     candidates = get_candidates(train_urls, tags_reprs_embeddings, model_bertopic) 
-    clusters_descriptors = get_clusters_descriptors(train_urls, candidates, cluster_embeddings, encoder)
+    clusters_descriptors = get_clusters_descriptors(train_urls, candidates, cluster_embeddings, encoder, device)
     print("clusters_descriptors: \n", clusters_descriptors)
 
     with open(os.path.join(save_dir,'clusters_descriptors.json'), 'w') as fp:
@@ -397,7 +401,7 @@ if __name__ == '__main__':
       use_val  = args.use_val
 
       print("use_val: ", use_val)
-      descriptors_embeds =  get_clusters_descriptors_embeds(encoder, clusters_descriptors)
+      descriptors_embeds =  get_clusters_descriptors_embeds(encoder, clusters_descriptors, device)
       descriptors_embeds /= torch.from_numpy(descriptors_embeds).norm(dim =1, keepdim =True)
       descriptors_embeds = descriptors_embeds.cpu().numpy()
       print(descriptors_embeds.shape)
@@ -437,7 +441,7 @@ if __name__ == '__main__':
       if use_val:
         model.load_state_dict(best_model_state_dict)
 
-      metrics = evaluate(model, X_test, Y_test_np)
+      metrics = evaluate(model, X_test, Y_test_np, device)
 
       for class_name, values in metrics.items():
             print(f"**{class_name}**")
